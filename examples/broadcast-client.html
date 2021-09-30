@@ -10,6 +10,7 @@
             var websocket = new WebSocket('ws://127.0.0.1:9000');
             websocket.onmessage = function(event) {
                 log.insertAdjacentHTML('beforeend', '<div>Received: <b>' + event.data + '</b></div>');
+                window.scrollTo(0,document.body.scrollHeight);
             }
         </script>
     </body>
