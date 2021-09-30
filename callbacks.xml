@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<?xml-stylesheet type="text/xsl" href="callbacks.xsl"?>
+
+<plugin name="WS" author="federico.ferri.it@gmail.com">
+    <description>WebSockets plugin.</description>
+    <command name="start">
+        <description>
+            Set up endpoint for listening on a port, and starts the server's async connection acceptance loop.
+        </description>
+        <params>
+            <param name="listenPort" type="int" />
+        </params>
+        <return>
+            <param name="serverHandle" type="string" />
+        </return>
+    </command>
+    <command name="setOpenHandler">
+        <description>
+            The open handler is called once for every successful WebSocket connection attempt. Either the fail handler or the open handler will be called for each WebSocket connection attempt. HTTP Connections that did not attempt to upgrade the connection to the WebSocket protocol will trigger the http handler instead of fail/open.
+        </description>
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="callbackFn" type="string" />
+        </params>
+    </command>
+    <command name="setFailHandler">
+        <description>
+            The fail handler is called once for every unsuccessful WebSocket connection attempt. Either the fail handler or the open handler will be called for each WebSocket connection attempt. HTTP Connections that did not attempt to upgrade the connection to the WebSocket protocol will trigger the http handler instead of fail/open.
+        </description>
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="callbackFn" type="string" />
+        </params>
+    </command>
+    <command name="setCloseHandler">
+        <description>
+            The close handler is called once for every successfully established connection after it is no longer capable of sending or receiving new messages.
+        </description>
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="callbackFn" type="string" />
+        </params>
+    </command>
+    <command name="setMessageHandler">
+        <description>
+            The message handler is called after a new message has been received.
+        </description>
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="callbackFn" type="string" />
+        </params>
+    </command>
+    <command name="setHTTPHandler">
+        <description>
+            The http handler is called when an HTTP connection is made that does not attempt to upgrade the connection to the WebSocket protocol. This allows to deliver error pages and static files such as the base HTML and JavaScript for an otherwise single page WebSocket application. Note: The HTTP handler is appropriate only for low volume HTTP traffic. If you expect to serve high volumes of HTTP traffic a dedicated HTTP web server is strongly recommended.
+        </description>
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="callbackFn" type="string" />
+        </params>
+    </command>
+    <command name="send">
+        <description>
+            Send data over the socket.
+        </description>
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="connectionHandle" type="string" />
+            <param name="data" type="string" />
+        </params>
+    </command>
+    <command name="stop">
+        <description>
+            Stop and destroy the server.
+        </description>
+        <params>
+            <param name="serverHandle" type="string" />
+        </params>
+    </command>
+    <script-function name="openCallback">
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="connectionHandle" type="string" />
+        </params>
+        <return>
+        </return>
+    </script-function>
+    <script-function name="failCallback">
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="connectionHandle" type="string" />
+        </params>
+        <return>
+        </return>
+    </script-function>
+    <script-function name="closeCallback">
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="connectionHandle" type="string" />
+        </params>
+        <return>
+        </return>
+    </script-function>
+    <script-function name="messageCallback">
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="connectionHandle" type="string" />
+            <param name="data" type="string" />
+        </params>
+        <return>
+        </return>
+    </script-function>
+    <script-function name="httpCallback">
+        <params>
+            <param name="serverHandle" type="string" />
+            <param name="connectionHandle" type="string" />
+            <param name="resource" type="string" />
+            <param name="data" type="string" />
+        </params>
+        <return>
+            <param name="status" type="int" default="404" />
+            <param name="data" type="string" />
+        </return>
+    </script-function>
+</plugin>
