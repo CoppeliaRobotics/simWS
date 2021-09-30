@@ -255,9 +255,11 @@ public:
 
     void send(send_in *in, send_out *out)
     {
+        if(in->opcode < 0 || in->opcode > 2)
+            throw sim::exception("invalid opcode: %d", in->opcode);
         auto meta = handles.get(in->serverHandle);
         auto c = shared_ptr<connection>(ConnectionHandle::obj(in->connectionHandle), [=](connection*){});
-        meta->server->send(c, in->data, websocketpp::frame::opcode::text);
+        meta->server->send(c, in->data, static_cast<websocketpp::frame::opcode::value>(in->opcode));
     }
 
     void stop(stop_in *in, stop_out *out)

@@ -67,6 +67,7 @@
             <param name="serverHandle" type="string" />
             <param name="connectionHandle" type="string" />
             <param name="data" type="string" />
+            <param name="opcode" type="int" default="sim_ws_opcode_text" />
         </params>
     </command>
     <command name="stop">
@@ -122,4 +123,9 @@
             <param name="data" type="string" />
         </return>
     </script-function>
+    <enum name="opcode" item-prefix="opcode_" base="1022">
+        <item name="continuation" value="0" />
+        <item name="text" value="1" />
+        <item name="binary" value="2" />
+    </enum>
 </plugin>
