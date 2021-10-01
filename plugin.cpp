@@ -18,7 +18,7 @@ typedef server::connection_type connection;
 
 struct server_meta
 {
-    server *server{nullptr};
+    server *srv{nullptr};
     optional<string> openHandler;
     optional<string> failHandler;
     optional<string> closeHandler;
@@ -27,7 +27,7 @@ struct server_meta
     int scriptID;
     int verbose{0};
 
-    ~server_meta() {if(server)delete server;}
+    ~server_meta() {if(srv)delete srv;}
 };
 
 using sim::Handle;
@@ -73,15 +73,15 @@ public:
     void onInstancePass(const sim::InstancePassFlags &flags)
     {
         for(auto meta : handles.all())
-            meta->server->poll();
+            meta->srv->poll();
     }
 
     void onScriptStateDestroyed(int scriptID)
     {
         for(auto meta : handles.find(scriptID))
         {
-            meta->server->stop_listening();
-            meta->server->stop_perpetual();
+            meta->srv->stop_listening();
+            meta->srv->stop_perpetual();
             handles.remove(meta);
             delete meta;
         }
@@ -97,7 +97,7 @@ public:
         {
             openCallback_in in;
             in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->server->get_con_from_hdl(hdl).get());
+            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
             openCallback_out out;
             openCallback(meta->scriptID, meta->openHandler->c_str(), &in, &out);
         }
@@ -117,7 +117,7 @@ public:
         {
             failCallback_in in;
             in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->server->get_con_from_hdl(hdl).get());
+            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
             failCallback_out out;
             failCallback(meta->scriptID, meta->failHandler->c_str(), &in, &out);
         }
@@ -137,7 +137,7 @@ public:
         {
             closeCallback_in in;
             in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->server->get_con_from_hdl(hdl).get());
+            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
             closeCallback_out out;
             closeCallback(meta->scriptID, meta->closeHandler->c_str(), &in, &out);
         }
@@ -157,7 +157,7 @@ public:
         {
             messageCallback_in in;
             in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->server->get_con_from_hdl(hdl).get());
+            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
             in.data = msg->get_payload();
             messageCallback_out out;
             messageCallback(meta->scriptID, meta->messageHandler->c_str(), &in, &out);
@@ -170,7 +170,7 @@ public:
 
     void onWSHTTP(server_meta *meta, websocketpp::connection_hdl hdl)
     {
-        server::connection_ptr con = meta->server->get_con_from_hdl(hdl);
+        server::connection_ptr con = meta->srv->get_con_from_hdl(hdl);
 
         sim::addLog(sim_verbosity_debug, "onWSHTTP: %s", con->get_resource());
 
@@ -184,7 +184,7 @@ public:
         {
             httpCallback_in in;
             in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->server->get_con_from_hdl(hdl).get());
+            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
             in.resource = con->get_resource();
             in.data = con->get_request_body();
             httpCallback_out out;
@@ -201,23 +201,23 @@ public:
     void start(start_in *in, start_out *out)
     {
         auto meta = new server_meta;
-        meta->server = new ::server;
-        meta->server->set_user_agent(*sim::getStringNamedParam("simWS.userAgent"));
+        meta->srv = new ::server;
+        meta->srv->set_user_agent(*sim::getStringNamedParam("simWS.userAgent"));
         auto verbose = sim::getStringNamedParam("simWS.verbose");
         if(verbose)
             meta->verbose = stoi(*verbose);
         if(meta->verbose > 0)
-            meta->server->set_access_channels(websocketpp::log::alevel::all ^ websocketpp::log::alevel::frame_payload);
+            meta->srv->set_access_channels(websocketpp::log::alevel::all ^ websocketpp::log::alevel::frame_payload);
         else
-            meta->server->set_access_channels(websocketpp::log::alevel::none);
-        meta->server->init_asio();
-        meta->server->set_open_handler(bind(&Plugin::onWSOpen, this, meta, _1));
-        meta->server->set_fail_handler(bind(&Plugin::onWSFail, this, meta, _1));
-        meta->server->set_close_handler(bind(&Plugin::onWSClose, this, meta, _1));
-        meta->server->set_message_handler(bind(&Plugin::onWSMessage, this, meta, _1, _2));
-        meta->server->set_http_handler(bind(&Plugin::onWSHTTP, this, meta, _1));
-        meta->server->listen(in->listenPort);
-        meta->server->start_accept();
+            meta->srv->set_access_channels(websocketpp::log::alevel::none);
+        meta->srv->init_asio();
+        meta->srv->set_open_handler(bind(&Plugin::onWSOpen, this, meta, _1));
+        meta->srv->set_fail_handler(bind(&Plugin::onWSFail, this, meta, _1));
+        meta->srv->set_close_handler(bind(&Plugin::onWSClose, this, meta, _1));
+        meta->srv->set_message_handler(bind(&Plugin::onWSMessage, this, meta, _1, _2));
+        meta->srv->set_http_handler(bind(&Plugin::onWSHTTP, this, meta, _1));
+        meta->srv->listen(in->listenPort);
+        meta->srv->start_accept();
         meta->scriptID = in->_.scriptID;
         out->serverHandle = handles.add(meta, in->_.scriptID);
     }
@@ -258,14 +258,14 @@ public:
             throw sim::exception("invalid opcode: %d", in->opcode);
         auto meta = handles.get(in->serverHandle);
         auto c = shared_ptr<connection>(ConnectionHandle::obj(in->connectionHandle), [=](connection*){});
-        meta->server->send(c, in->data, static_cast<websocketpp::frame::opcode::value>(in->opcode));
+        meta->srv->send(c, in->data, static_cast<websocketpp::frame::opcode::value>(in->opcode));
     }
 
     void stop(stop_in *in, stop_out *out)
     {
         auto meta = handles.get(in->serverHandle);
-        meta->server->stop_listening();
-        meta->server->stop_perpetual();
+        meta->srv->stop_listening();
+        meta->srv->stop_perpetual();
         handles.remove(meta);
         delete meta;
     }
