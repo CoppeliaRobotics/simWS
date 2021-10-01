@@ -9,6 +9,8 @@ if(WIN32)
     add_definitions(-DWIN32_LEAN_AND_MEAN=1)
 endif()
 
+set(USE_STANDALONE_ASIO ON CACHE BOOL "Use standalone 'asio' library instead of 'boost-asio'")
+
 if(NOT LIBPLUGIN_DIR)
     if(DEFINED ENV{COPPELIASIM_ROOT_DIR})
         set(LIBPLUGIN_DIR $ENV{COPPELIASIM_ROOT_DIR}/programming/libPlugin)
@@ -34,4 +36,7 @@ coppeliasim_generate_stubs(${CMAKE_CURRENT_BINARY_DIR}/generated XML_FILE ${CMAK
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 coppeliasim_add_plugin(simExtWS SOURCES plugin.cpp)
+if(USE_STANDALONE_ASIO)
+    target_compile_definitions(simExtWS PRIVATE -DASIO_STANDALONE)
+endif()
 target_include_directories(simExtWS PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/_deps/websocketpp-src)
