@@ -13,12 +13,82 @@ using namespace std::placeholders;
 
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
-typedef websocketpp::server<websocketpp::config::asio> server;
-typedef server::connection_type connection;
+#include <websocketpp/logger/basic.hpp>
+#include <websocketpp/common/cpp11.hpp>
+#include <websocketpp/logger/levels.hpp>
+
+namespace websocketpp
+{
+    namespace log
+    {
+        template<typename concurrency, typename names>
+        class coppeliasim_logger : public basic<concurrency, names>
+        {
+        public:
+            typedef basic<concurrency, names> base;
+
+            coppeliasim_logger<concurrency, names>(channel_type_hint::value hint = channel_type_hint::access)
+                    : basic<concurrency, names>(hint), m_channel_type_hint(hint)
+            {
+            }
+
+            coppeliasim_logger<concurrency, names>(level channels, channel_type_hint::value hint = channel_type_hint::access)
+                    : basic<concurrency, names>(channels, hint), m_channel_type_hint(hint)
+            {
+            }
+
+            static int getVerbosityForChannel(level channel)
+            {
+                if(channel == elevel::devel)
+                    return sim_verbosity_debug;
+                else if(channel == elevel::library)
+                    return sim_verbosity_debug;
+                else if(channel == elevel::info)
+                    return sim_verbosity_infos;
+                else if(channel == elevel::warn)
+                    return sim_verbosity_warnings;
+                else if(channel == elevel::rerror)
+                    return sim_verbosity_errors;
+                else if(channel == elevel::fatal)
+                    return sim_verbosity_errors;
+                else
+                    return sim_verbosity_useglobal;
+            }
+
+            void write(level channel, std::string const &msg)
+            {
+                write(channel, msg.c_str());
+            }
+
+            void write(level channel, char const *msg)
+            {
+                scoped_lock_type lock(base::m_lock);
+                if(!this->dynamic_test(channel)) return;
+                int verbosity = sim_verbosity_infos;
+                if(m_channel_type_hint != channel_type_hint::access)
+                    verbosity = getVerbosityForChannel(channel);
+                sim::addLog(verbosity, msg);
+            }
+
+        private:
+            typedef typename base::scoped_lock_type scoped_lock_type;
+            channel_type_hint::value m_channel_type_hint;
+        };
+    } // log
+} // websocketpp
+
+struct my_config : public websocketpp::config::asio
+{
+    typedef websocketpp::log::coppeliasim_logger<concurrency_type, websocketpp::log::elevel> elog_type;
+    typedef websocketpp::log::coppeliasim_logger<concurrency_type, websocketpp::log::alevel> alog_type;
+};
+
+typedef websocketpp::server<my_config> my_server;
+typedef my_server::connection_type my_connection;
 
 struct server_meta
 {
-    server *srv{nullptr};
+    my_server *srv{nullptr};
     optional<string> openHandler;
     optional<string> failHandler;
     optional<string> closeHandler;
@@ -33,7 +103,7 @@ struct server_meta
 using sim::Handle;
 using sim::Handles;
 typedef Handle<server_meta> ServerHandle;
-typedef Handle<connection> ConnectionHandle;
+typedef Handle<my_connection> ConnectionHandle;
 template<> string ServerHandle::tag() { return "simWS.Server"; }
 template<> string ConnectionHandle::tag() { return "simWS.Connection"; }
 
@@ -147,7 +217,7 @@ public:
         }
     }
 
-    void onWSMessage(server_meta *meta, websocketpp::connection_hdl hdl, server::message_ptr msg)
+    void onWSMessage(server_meta *meta, websocketpp::connection_hdl hdl, my_server::message_ptr msg)
     {
         sim::addLog(sim_verbosity_debug, "onWSMessage: %s", msg->get_payload());
 
@@ -170,7 +240,7 @@ public:
 
     void onWSHTTP(server_meta *meta, websocketpp::connection_hdl hdl)
     {
-        server::connection_ptr con = meta->srv->get_con_from_hdl(hdl);
+        my_server::connection_ptr con = meta->srv->get_con_from_hdl(hdl);
 
         sim::addLog(sim_verbosity_debug, "onWSHTTP: %s", con->get_resource());
 
@@ -201,7 +271,7 @@ public:
     void start(start_in *in, start_out *out)
     {
         auto meta = new server_meta;
-        meta->srv = new ::server;
+        meta->srv = new my_server;
         meta->srv->set_user_agent(*sim::getStringNamedParam("simWS.userAgent"));
         auto verbose = sim::getStringNamedParam("simWS.verbose");
         if(verbose)
@@ -257,7 +327,7 @@ public:
         if(in->opcode < 0 || in->opcode > 2)
             throw sim::exception("invalid opcode: %d", in->opcode);
         auto meta = handles.get(in->serverHandle);
-        auto c = shared_ptr<connection>(ConnectionHandle::obj(in->connectionHandle), [=](connection*){});
+        auto c = shared_ptr<my_connection>(ConnectionHandle::obj(in->connectionHandle), [=](my_connection*){});
         meta->srv->send(c, in->data, static_cast<websocketpp::frame::opcode::value>(in->opcode));
     }
 
