@@ -1,4 +1,4 @@
-# WebSockets plugin for CoppeliaSim
+# WebSocket plugin for CoppeliaSim
 
 ### Compiling
 

@@ -115,7 +115,7 @@ public:
         if(!registerScriptStuff())
             throw runtime_error("failed to register script stuff");
 
-        setExtVersion("WebSockets Plugin");
+        setExtVersion("WebSocket Plugin");
         setBuildDate(BUILD_DATE);
 
         if(!sim::getStringNamedParam("simWS.userAgent"))

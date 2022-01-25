@@ -2,7 +2,7 @@
 <?xml-stylesheet type="text/xsl" href="callbacks.xsl"?>
 
 <plugin name="WS" author="federico.ferri.it@gmail.com">
-    <description>WebSockets plugin.</description>
+    <description>WebSocket plugin.</description>
     <command name="start">
         <description>
             Set up endpoint for listening on a port, and starts the server's async connection acceptance loop.
