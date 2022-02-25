@@ -81,6 +81,14 @@ struct my_config : public websocketpp::config::asio
 {
     typedef websocketpp::log::coppeliasim_logger<concurrency_type, websocketpp::log::elevel> elog_type;
     typedef websocketpp::log::coppeliasim_logger<concurrency_type, websocketpp::log::alevel> alog_type;
+
+    struct my_transport_config : public websocketpp::config::asio::transport_config
+    {
+        typedef my_config::alog_type alog_type;
+        typedef my_config::elog_type elog_type;
+    };
+
+    typedef websocketpp::transport::asio::endpoint<my_transport_config> transport_type;
 };
 
 typedef websocketpp::server<my_config> my_server;
