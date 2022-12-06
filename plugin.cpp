@@ -3,7 +3,7 @@
 #include <functional>
 #include <optional>
 #include "simPlusPlus/Plugin.h"
-#include "simPlusPlus/Handle.h"
+#include "simPlusPlus/Handles.h"
 #include "config.h"
 #include "plugin.h"
 #include "stubs.h"
@@ -108,13 +108,6 @@ struct server_meta
     ~server_meta() {if(srv)delete srv;}
 };
 
-using sim::Handle;
-using sim::Handles;
-typedef Handle<server_meta> ServerHandle;
-typedef Handle<my_connection> ConnectionHandle;
-template<> string ServerHandle::tag() { return "simWS.Server"; }
-template<> string ConnectionHandle::tag() { return "simWS.Connection"; }
-
 class Plugin : public sim::Plugin
 {
 public:
@@ -171,18 +164,11 @@ public:
 
         if(!meta->openHandler) return;
 
-        if(auto h = hdl.lock())
-        {
-            openCallback_in in;
-            in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
-            openCallback_out out;
-            openCallback(meta->scriptID, meta->openHandler->c_str(), &in, &out);
-        }
-        else
-        {
-            throw runtime_error("connection_hdl weak_ptr expired");
-        }
+        openCallback_in in;
+        in.serverHandle = handles.add(meta, meta->scriptID);
+        in.connectionHandle = connHandles.add(hdl, meta->scriptID);
+        openCallback_out out;
+        openCallback(meta->scriptID, meta->openHandler->c_str(), &in, &out);
     }
 
     void onWSFail(server_meta *meta, websocketpp::connection_hdl hdl)
@@ -191,18 +177,11 @@ public:
 
         if(!meta->failHandler) return;
 
-        if(auto h = hdl.lock())
-        {
-            failCallback_in in;
-            in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
-            failCallback_out out;
-            failCallback(meta->scriptID, meta->failHandler->c_str(), &in, &out);
-        }
-        else
-        {
-            throw runtime_error("connection_hdl weak_ptr expired");
-        }
+        failCallback_in in;
+        in.serverHandle = handles.add(meta, meta->scriptID);
+        in.connectionHandle = connHandles.add(hdl, meta->scriptID);
+        failCallback_out out;
+        failCallback(meta->scriptID, meta->failHandler->c_str(), &in, &out);
     }
 
     void onWSClose(server_meta *meta, websocketpp::connection_hdl hdl)
@@ -211,18 +190,11 @@ public:
 
         if(!meta->closeHandler) return;
 
-        if(auto h = hdl.lock())
-        {
-            closeCallback_in in;
-            in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
-            closeCallback_out out;
-            closeCallback(meta->scriptID, meta->closeHandler->c_str(), &in, &out);
-        }
-        else
-        {
-            throw runtime_error("connection_hdl weak_ptr expired");
-        }
+        closeCallback_in in;
+        in.serverHandle = handles.add(meta, meta->scriptID);
+        in.connectionHandle = connHandles.add(hdl, meta->scriptID);
+        closeCallback_out out;
+        closeCallback(meta->scriptID, meta->closeHandler->c_str(), &in, &out);
     }
 
     void onWSMessage(server_meta *meta, websocketpp::connection_hdl hdl, my_server::message_ptr msg)
@@ -231,19 +203,12 @@ public:
 
         if(!meta->messageHandler) return;
 
-        if(auto h = hdl.lock())
-        {
-            messageCallback_in in;
-            in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
-            in.data = msg->get_payload();
-            messageCallback_out out;
-            messageCallback(meta->scriptID, meta->messageHandler->c_str(), &in, &out);
-        }
-        else
-        {
-            throw runtime_error("connection_hdl weak_ptr expired");
-        }
+        messageCallback_in in;
+        in.serverHandle = handles.add(meta, meta->scriptID);
+        in.connectionHandle = connHandles.add(hdl, meta->scriptID);
+        in.data = msg->get_payload();
+        messageCallback_out out;
+        messageCallback(meta->scriptID, meta->messageHandler->c_str(), &in, &out);
     }
 
     void onWSHTTP(server_meta *meta, websocketpp::connection_hdl hdl)
@@ -261,8 +226,8 @@ public:
         if(auto h = hdl.lock())
         {
             httpCallback_in in;
-            in.serverHandle = ServerHandle::str(meta);
-            in.connectionHandle = ConnectionHandle::str(meta->srv->get_con_from_hdl(hdl).get());
+            in.serverHandle = handles.add(meta, meta->scriptID);
+            in.connectionHandle = connHandles.add(hdl, meta->scriptID);
             in.resource = con->get_resource();
             in.data = con->get_request_body();
             httpCallback_out out;
@@ -335,8 +300,16 @@ public:
         if(in->opcode < 0 || in->opcode > 2)
             throw sim::exception("invalid opcode: %d", in->opcode);
         auto meta = handles.get(in->serverHandle);
-        auto c = shared_ptr<my_connection>(ConnectionHandle::obj(in->connectionHandle), [=](my_connection*){});
-        meta->srv->send(c, in->data, static_cast<websocketpp::frame::opcode::value>(in->opcode));
+        auto hdl = connHandles.get(in->connectionHandle);
+        if(auto h = hdl.lock())
+        {
+            auto c = meta->srv->get_con_from_hdl(hdl);
+            meta->srv->send(c, in->data, static_cast<websocketpp::frame::opcode::value>(in->opcode));
+        }
+        else
+        {
+            throw runtime_error("connection_hdl weak_ptr expired");
+        }
     }
 
     void stop(stop_in *in, stop_out *out)
@@ -349,7 +322,8 @@ public:
     }
 
 private:
-    Handles<server_meta> handles;
+    sim::Handles<server_meta*> handles{"simWS.Server"};
+    sim::WeakHandles<websocketpp::connection_hdl> connHandles{"simWS.Connection"};
 };
 
 SIM_PLUGIN(PLUGIN_NAME, PLUGIN_VERSION, Plugin)
