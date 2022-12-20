@@ -119,13 +119,13 @@ public:
         setExtVersion("WebSocket Plugin");
         setBuildDate(BUILD_DATE);
 
-        if(!sim::getStringNamedParam("simWS.userAgent"))
+        if(!sim::getNamedStringParam("simWS.userAgent"))
         {
-            vector<int> v{0, 0, 0, sim::getInt32Parameter(sim_intparam_program_full_version)};
+            vector<int> v{0, 0, 0, sim::getInt32Param(sim_intparam_program_full_version)};
             for(int i = 3; i > 0; i--) v[i - 1] = v[i] / 100;
             for(int i = 0; i < 4; i++) v[i] = v[i] % 100;
-            auto p = sim::getInt32Parameter(sim_intparam_platform);
-            sim::setStringNamedParam("simWS.userAgent",
+            auto p = sim::getInt32Param(sim_intparam_platform);
+            sim::setNamedStringParam("simWS.userAgent",
                 sim::util::sprintf("CoppeliaSim/%d.%d.%drev%d %s",
                     v[0], v[1], v[2], v[3],
                     p == 0 ? "Windows" :
@@ -245,8 +245,8 @@ public:
     {
         auto meta = new server_meta;
         meta->srv = new my_server;
-        meta->srv->set_user_agent(*sim::getStringNamedParam("simWS.userAgent"));
-        auto verbose = sim::getStringNamedParam("simWS.verbose");
+        meta->srv->set_user_agent(*sim::getNamedStringParam("simWS.userAgent"));
+        auto verbose = sim::getNamedStringParam("simWS.verbose");
         if(verbose)
             meta->verbose = stoi(*verbose);
         if(meta->verbose > 0)
