@@ -3,15 +3,18 @@
 ### Compiling
 
 1. Install required packages for [libPlugin](https://github.com/CoppeliaRobotics/libPlugin): see libPlugin's README
-2. Checkout and compile
+2. Checkout, compile and install into CoppeliaSim:
 ```sh
-$ git clone --recursive https://github.com/CoppeliaRobotics/simExtWS.git
+$ git clone https://github.com/CoppeliaRobotics/simExtWS.git
 $ cd simExtWS
+$ git checkout coppeliasim-v4.5.0-rev0
 $ mkdir build && cd build
-$ cmake ..
+$ cmake -DCMAKE_BUILD_TYPE=Release ..
 $ cmake --build .
 $ cmake --install .
 ```
+
+NOTE: replace `coppeliasim-v4.5.0-rev0` with the actual CoppeliaSim version you have.
 
 ### Usage
 
