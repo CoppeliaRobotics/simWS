@@ -246,9 +246,9 @@ public:
         auto meta = new server_meta;
         meta->srv = new my_server;
         meta->srv->set_user_agent(*sim::getNamedStringParam("simWS.userAgent"));
-        auto verbose = sim::getNamedStringParam("simWS.verbose");
+        auto verbose = sim::getNamedInt32Param("simWS.verbose");
         if(verbose)
-            meta->verbose = stoi(*verbose);
+            meta->verbose = *verbose;
         if(meta->verbose > 0)
             meta->srv->set_access_channels(websocketpp::log::alevel::all ^ websocketpp::log::alevel::frame_payload);
         else
