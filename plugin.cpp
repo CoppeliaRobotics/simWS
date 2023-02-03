@@ -2,8 +2,8 @@
 #include <stdexcept>
 #include <functional>
 #include <optional>
-#include "simPlusPlus/Plugin.h"
-#include "simPlusPlus/Handles.h"
+#include <simPlusPlus/Plugin.h>
+#include <simPlusPlus/Handles.h>
 #include "config.h"
 #include "plugin.h"
 #include "stubs.h"
