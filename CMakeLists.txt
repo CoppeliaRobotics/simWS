@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(simExtWS)
+project(simWS)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MACOSX_RPATH 1)
@@ -35,8 +35,8 @@ coppeliasim_generate_stubs(${CMAKE_CURRENT_BINARY_DIR}/generated XML_FILE ${CMAK
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
-coppeliasim_add_plugin(simExtWS SOURCES plugin.cpp)
+coppeliasim_add_plugin(simWS SOURCES plugin.cpp)
 if(USE_STANDALONE_ASIO)
-    target_compile_definitions(simExtWS PRIVATE -DASIO_STANDALONE)
+    target_compile_definitions(simWS PRIVATE -DASIO_STANDALONE)
 endif()
-target_include_directories(simExtWS PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/_deps/websocketpp-src)
+target_include_directories(simWS PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/_deps/websocketpp-src)
