@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
 <?xml-stylesheet type="text/xsl" href="callbacks.xsl"?>
 
-<plugin name="WS" author="federico.ferri.it@gmail.com">
+<plugin name="simWS" author="federico.ferri.it@gmail.com">
     <description>WebSocket plugin.</description>
     <command name="start">
         <description>
@@ -67,7 +67,7 @@
             <param name="serverHandle" type="string" />
             <param name="connectionHandle" type="string" />
             <param name="data" type="string" />
-            <param name="opcode" type="int" default="sim_ws_opcode_text" />
+            <param name="opcode" type="int" default="simws_opcode_text" />
         </params>
     </command>
     <command name="stop">

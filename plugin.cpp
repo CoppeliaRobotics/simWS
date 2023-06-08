@@ -326,5 +326,5 @@ private:
     sim::WeakHandles<websocketpp::connection_hdl> connHandles{"simWS.Connection"};
 };
 
-SIM_PLUGIN(PLUGIN_NAME, PLUGIN_VERSION, Plugin)
+SIM_PLUGIN(Plugin)
 #include "stubsPlusPlus.cpp"
