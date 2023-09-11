@@ -66,7 +66,7 @@
         <params>
             <param name="serverHandle" type="string" />
             <param name="connectionHandle" type="string" />
-            <param name="data" type="string" />
+            <param name="data" type="buffer" />
             <param name="opcode" type="int" default="simws_opcode_text" />
         </params>
     </command>
@@ -106,7 +106,7 @@
         <params>
             <param name="serverHandle" type="string" />
             <param name="connectionHandle" type="string" />
-            <param name="data" type="string" />
+            <param name="data" type="buffer" />
         </params>
         <return>
         </return>
@@ -116,11 +116,11 @@
             <param name="serverHandle" type="string" />
             <param name="connectionHandle" type="string" />
             <param name="resource" type="string" />
-            <param name="data" type="string" />
+            <param name="data" type="buffer" />
         </params>
         <return>
             <param name="status" type="int" default="404" />
-            <param name="data" type="string" />
+            <param name="data" type="buffer" />
         </return>
     </script-function>
     <enum name="opcode" item-prefix="opcode_" base="1022">
