@@ -147,9 +147,9 @@ public:
             meta->srv->poll();
     }
 
-    void onScriptStateDestroyed(int scriptID)
+    void onScriptStateAboutToBeDestroyed(int scriptHandle)
     {
-        for(auto meta : handles.find(scriptID))
+        for(auto meta : handles.find(scriptHandle))
         {
             meta->srv->stop_listening();
             meta->srv->stop_perpetual();
