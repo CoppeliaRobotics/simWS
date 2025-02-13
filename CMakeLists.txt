@@ -20,6 +20,7 @@ if(NOT COPPELIASIM_INCLUDE_DIR)
 endif()
 list(APPEND CMAKE_MODULE_PATH ${COPPELIASIM_INCLUDE_DIR}/cmake)
 find_package(CoppeliaSim 4.5.1.7 REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 include(FetchContent)
 
@@ -36,6 +37,7 @@ coppeliasim_generate_stubs(${CMAKE_CURRENT_BINARY_DIR}/generated XML_FILE ${CMAK
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/sourceCode/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 coppeliasim_add_plugin(simWS SOURCES sourceCode/plugin.cpp)
+target_link_libraries(simWS PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 if(USE_STANDALONE_ASIO)
     target_compile_definitions(simWS PRIVATE -DASIO_STANDALONE)
 endif()

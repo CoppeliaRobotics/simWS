@@ -19,7 +19,7 @@
             The open handler is called once for every successful WebSocket connection attempt. Either the fail handler or the open handler will be called for each WebSocket connection attempt. HTTP Connections that did not attempt to upgrade the connection to the WebSocket protocol will trigger the http handler instead of fail/open.
         </description>
         <params>
-            <param name="serverHandle" type="string" />
+            <param name="serverOrClientHandle" type="string" />
             <param name="callbackFn" type="string" />
         </params>
     </command>
@@ -28,7 +28,7 @@
             The fail handler is called once for every unsuccessful WebSocket connection attempt. Either the fail handler or the open handler will be called for each WebSocket connection attempt. HTTP Connections that did not attempt to upgrade the connection to the WebSocket protocol will trigger the http handler instead of fail/open.
         </description>
         <params>
-            <param name="serverHandle" type="string" />
+            <param name="serverOrClientHandle" type="string" />
             <param name="callbackFn" type="string" />
         </params>
     </command>
@@ -37,7 +37,7 @@
             The close handler is called once for every successfully established connection after it is no longer capable of sending or receiving new messages.
         </description>
         <params>
-            <param name="serverHandle" type="string" />
+            <param name="serverOrClientHandle" type="string" />
             <param name="callbackFn" type="string" />
         </params>
     </command>
@@ -46,7 +46,7 @@
             The message handler is called after a new message has been received.
         </description>
         <params>
-            <param name="serverHandle" type="string" />
+            <param name="serverOrClientHandle" type="string" />
             <param name="callbackFn" type="string" />
         </params>
     </command>
@@ -64,7 +64,7 @@
             Send data over the socket.
         </description>
         <params>
-            <param name="serverHandle" type="string" />
+            <param name="serverOrClientHandle" type="string" />
             <param name="connectionHandle" type="string" />
             <param name="data" type="buffer" />
             <param name="opcode" type="int" default="simws_opcode_text" />
@@ -78,9 +78,30 @@
             <param name="serverHandle" type="string" />
         </params>
     </command>
+    <command name="connect">
+        <description>
+            Connect to an endpoint.
+        </description>
+        <params>
+            <param name="uri" type="string" />
+        </params>
+        <return>
+            <param name="clientHandle" type="string" />
+        </return>
+    </command>
+    <command name="disconnect">
+        <description>
+            Disconnect from an endpoint.
+        </description>
+        <params>
+            <param name="clientHandle" type="string" />
+        </params>
+        <return>
+        </return>
+    </command>
     <script-function name="openCallback">
         <params>
-            <param name="serverHandle" type="string" />
+            <param name="serverOrClientHandle" type="string" />
             <param name="connectionHandle" type="string" />
         </params>
         <return>
@@ -88,7 +109,7 @@
     </script-function>
     <script-function name="failCallback">
         <params>
-            <param name="serverHandle" type="string" />
+            <param name="serverOrClientHandle" type="string" />
             <param name="connectionHandle" type="string" />
         </params>
         <return>
@@ -96,7 +117,7 @@
     </script-function>
     <script-function name="closeCallback">
         <params>
-            <param name="serverHandle" type="string" />
+            <param name="serverOrClientHandle" type="string" />
             <param name="connectionHandle" type="string" />
         </params>
         <return>
@@ -104,7 +125,7 @@
     </script-function>
     <script-function name="messageCallback">
         <params>
-            <param name="serverHandle" type="string" />
+            <param name="serverOrClientHandle" type="string" />
             <param name="connectionHandle" type="string" />
             <param name="data" type="buffer" />
         </params>
