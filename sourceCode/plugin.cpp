@@ -265,9 +265,15 @@ public:
             in.resource = con->get_resource();
             in.data = con->get_request_body();
             httpCallback_out out;
-            httpCallback(meta->scriptID, meta->httpHandler->c_str(), &in, &out);
-            con->set_status(static_cast<websocketpp::http::status_code::value>(out.status));
-            con->set_body(out.data);
+            if(httpCallback(meta->scriptID, meta->httpHandler->c_str(), &in, &out))
+            {
+                con->set_status(static_cast<websocketpp::http::status_code::value>(out.status));
+                con->set_body(out.data);
+            }
+            else
+            {
+                con->set_status(websocketpp::http::status_code::internal_server_error);
+            }
         }
         else
         {
