@@ -1,127 +1,349 @@
 #include <string>
 #include <stdexcept>
-#include <functional>
 #include <optional>
+
+#include <QTcpServer>
+#include <QWebSocket>
+#include <QWebSocketServer>
+
 #include <simPlusPlus/Plugin.h>
 #include <simPlusPlus/Handles.h>
+
 #include "config.h"
 #include "plugin.h"
 #include "stubs.h"
 
-using namespace std;
-using namespace std::placeholders;
-
-#include <websocketpp/config/asio_no_tls.hpp>
-#include <websocketpp/server.hpp>
-#include <websocketpp/logger/basic.hpp>
-#include <websocketpp/common/cpp11.hpp>
-#include <websocketpp/logger/levels.hpp>
-#include <websocketpp/config/asio_client.hpp>
-#include <websocketpp/client.hpp>
-
-namespace websocketpp
+std::ostream& operator<<(std::ostream& os, const QString& str)
 {
-    namespace log
+    return os << str.toStdString();
+}
+
+std::ostream& operator<<(std::ostream& os, const QByteArray& byteArray)
+{
+    return os << byteArray.toStdString();
+}
+
+class WebSocketClient : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit WebSocketClient(const QString &url, sim::Handles<WebSocketClient*> &cliHandles, sim::Handles<QWebSocket*> &connHandles, bool verbose, QObject *parent = nullptr)
+        : QObject(parent),
+          cliHandles(cliHandles),
+          connHandles(connHandles),
+          verbose(verbose)
     {
-        template<typename concurrency, typename names>
-        class coppeliasim_logger : public basic<concurrency, names>
+        connect(&ws, &QWebSocket::connected, this, &WebSocketClient::onOpen);
+        connect(&ws, &QWebSocket::disconnected, this, &WebSocketClient::onClose);
+        connect(&ws, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), this, &WebSocketClient::onFail);
+        ws.open(QUrl(url));
+    }
+
+public slots:
+    void onOpen()
+    {
+        if(verbose)
+            std::cout << "WebSocketClient: opened connection" << std::endl;
+        connect(&ws, &QWebSocket::textMessageReceived, this, &WebSocketClient::onTextMessage);
+        connect(&ws, &QWebSocket::binaryMessageReceived, this, &WebSocketClient::onBinaryMessage);
+        if(openHandler)
         {
-        public:
-            typedef basic<concurrency, names> base;
+            openCallback_in in;
+            in.serverOrClientHandle = cliHandles.add(this, scriptID);
+            in.connectionHandle = connHandles.add(&ws, scriptID);
+            openCallback_out out;
+            openCallback(scriptID, openHandler->c_str(), &in, &out);
+        }
+    }
 
-            coppeliasim_logger<concurrency, names>(channel_type_hint::value hint = channel_type_hint::access)
-                    : basic<concurrency, names>(hint), m_channel_type_hint(hint)
-            {
-            }
-
-            coppeliasim_logger<concurrency, names>(level channels, channel_type_hint::value hint = channel_type_hint::access)
-                    : basic<concurrency, names>(channels, hint), m_channel_type_hint(hint)
-            {
-            }
-
-            static int getVerbosityForChannel(level channel)
-            {
-                if(channel == elevel::devel)
-                    return sim_verbosity_debug;
-                else if(channel == elevel::library)
-                    return sim_verbosity_debug;
-                else if(channel == elevel::info)
-                    return sim_verbosity_infos;
-                else if(channel == elevel::warn)
-                    return sim_verbosity_warnings;
-                else if(channel == elevel::rerror)
-                    return sim_verbosity_errors;
-                else if(channel == elevel::fatal)
-                    return sim_verbosity_errors;
-                else
-                    return sim_verbosity_useglobal;
-            }
-
-            void write(level channel, std::string const &msg)
-            {
-                write(channel, msg.c_str());
-            }
-
-            void write(level channel, char const *msg)
-            {
-                scoped_lock_type lock(base::m_lock);
-                if(!this->dynamic_test(channel)) return;
-                int verbosity = sim_verbosity_infos;
-                if(m_channel_type_hint != channel_type_hint::access)
-                    verbosity = getVerbosityForChannel(channel);
-                sim::addLog(verbosity, msg);
-            }
-
-        private:
-            typedef typename base::scoped_lock_type scoped_lock_type;
-            channel_type_hint::value m_channel_type_hint;
-        };
-    } // log
-} // websocketpp
-
-struct my_srv_config : public websocketpp::config::asio
-{
-    typedef websocketpp::log::coppeliasim_logger<concurrency_type, websocketpp::log::elevel> elog_type;
-    typedef websocketpp::log::coppeliasim_logger<concurrency_type, websocketpp::log::alevel> alog_type;
-
-    struct my_transport_config : public websocketpp::config::asio::transport_config
+    void onClose()
     {
-        typedef my_srv_config::alog_type alog_type;
-        typedef my_srv_config::elog_type elog_type;
-    };
+        if(verbose)
+            std::cout << "WebSocketClient: closed connection" << std::endl;
+        if(closeHandler)
+        {
+            closeCallback_in in;
+            in.serverOrClientHandle = cliHandles.add(this, scriptID);
+            in.connectionHandle = connHandles.add(&ws, scriptID);
+            closeCallback_out out;
+            closeCallback(scriptID, closeHandler->c_str(), &in, &out);
+        }
+        connHandles.remove(&ws);
+    }
 
-    typedef websocketpp::transport::asio::endpoint<my_transport_config> transport_type;
-};
+    void onFail(QAbstractSocket::SocketError error)
+    {
+        if(verbose)
+            std::cout << "WebSocketClient: failure: " << error << std::endl;
+        if(failHandler)
+        {
+            failCallback_in in;
+            in.serverOrClientHandle = cliHandles.add(this, scriptID);
+            in.connectionHandle = connHandles.add(&ws, scriptID);
+            failCallback_out out;
+            failCallback(scriptID, failHandler->c_str(), &in, &out);
+        }
+    }
 
-struct _meta
-{
-    optional<string> openHandler;
-    optional<string> failHandler;
-    optional<string> closeHandler;
-    optional<string> messageHandler;
+    void onTextMessage(const QString &message)
+    {
+        if(verbose)
+            std::cout << "WebSocketClient: received text message: " << message << std::endl;
+        if(messageHandler)
+        {
+            messageCallback_in in;
+            in.serverOrClientHandle = cliHandles.add(this, scriptID);
+            in.connectionHandle = connHandles.add(&ws, scriptID);
+            in.data = message.toStdString();
+            messageCallback_out out;
+            if(verbose)
+                std::cout << "WebSocketClient::onTextMessage() - before callback" << std::endl;
+            messageCallback(scriptID, messageHandler->c_str(), &in, &out);
+            if(verbose)
+                std::cout << "WebSocketClient::onTextMessage() - after callback" << std::endl;
+        }
+    }
+
+    void onBinaryMessage(const QByteArray &message)
+    {
+        if(verbose)
+            std::cout << "WebSocketClient: received binary message: " << message << std::endl;
+        if(messageHandler)
+        {
+            messageCallback_in in;
+            in.serverOrClientHandle = cliHandles.add(this, scriptID);
+            in.connectionHandle = connHandles.add(&ws, scriptID);
+            in.data = message.toStdString();
+            messageCallback_out out;
+            messageCallback(scriptID, messageHandler->c_str(), &in, &out);
+        }
+    }
+
+public:
     int scriptID;
-    int verbose{0};
-    virtual ~_meta() = default;
+    std::optional<std::string> openHandler;
+    std::optional<std::string> failHandler;
+    std::optional<std::string> closeHandler;
+    std::optional<std::string> messageHandler;
+
+private:
+    QWebSocket ws;
+    sim::Handles<WebSocketClient*> &cliHandles;
+    sim::Handles<QWebSocket*> &connHandles;
+    bool verbose;
 };
 
-typedef websocketpp::server<my_srv_config> my_server;
-
-struct server_meta : public _meta
+class WebSocketServer : public QObject
 {
-    my_server *srv{nullptr};
-    optional<string> httpHandler;
-    virtual ~server_meta() {if(srv)delete srv;}
+    Q_OBJECT
+public:
+    explicit WebSocketServer(quint16 port, sim::Handles<WebSocketServer*> &srvHandles, sim::Handles<QWebSocket*> &connHandles, bool verbose, QObject *parent = nullptr)
+        : QObject(parent),
+          ts(parent),
+          ws(QString::fromStdString(*sim::getNamedStringParam("simWS.userAgent")), QWebSocketServer::NonSecureMode, this),
+          srvHandles(srvHandles),
+          connHandles(connHandles)
+    {
+#if 0
+        if(ws.listen(QHostAddress::Any, port))
+        {
+            connect(&ws, &QWebSocketServer::newConnection, this, &WebSocketServer::onOpen);
+            connect(&ws, &QWebSocketServer::closed, this, &WebSocketServer::onClose);
+            connect(&ws, &QWebSocketServer::serverError, this, &WebSocketClient::onFail);
+        }
+#else
+        if(ts.listen(QHostAddress::Any, port))
+        {
+            connect(&ts, &QTcpServer::newConnection, this, &WebSocketServer::handleNewConnection);
+        }
+#endif
+    }
+
+    void handleNewConnection()
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: handleNewConnection" << std::endl;
+        QTcpSocket *socket = ts.nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, this, [this, socket]() { processRequest(socket); });
+    }
+
+    void processRequest(QTcpSocket *socket)
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: processRequest" << std::endl;
+        if(!socket->canReadLine()) return;
+
+        QByteArray requestData = socket->readAll();
+        QString requestLine = QString::fromUtf8(requestData.split('\n').first());
+
+        if(requestLine.startsWith("GET /"))
+        {
+            QString resource = requestLine.mid(4);
+            if(httpHandler)
+            {
+                httpCallback_in in;
+                in.serverHandle = srvHandles.add(this, scriptID);
+                //in.connectionHandle = connHandles.add(nullptr, scriptID);
+                in.resource = resource.toStdString();
+                in.data = "";
+                httpCallback_out out;
+                int httpStatus = 500;
+                QByteArray responseBody;
+                if(httpCallback(scriptID, httpHandler->c_str(), &in, &out))
+                {
+                    httpStatus = out.status;
+                    responseBody = QByteArray::fromStdString(out.data);
+                }
+                sendResponse(socket, httpStatus, responseBody);
+            }
+            else sendErrorResponse(socket);
+        }
+        else if(requestData.contains("Upgrade: websocket"))
+        {
+            upgradeToWebSocket(socket, requestData);
+        }
+        else
+        {
+            sendErrorResponse(socket);
+        }
+    }
+
+    void sendResponse(QTcpSocket *socket, int status, const QByteArray &content = "")
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: processRequest" << std::endl;
+        QByteArray response = "HTTP/1.1 " + QByteArray::number(status) + "\r\n"
+                              "Connection: close\r\n" + content;
+                              //"Content-Type: text/html\r\n"
+                              //"Content-Length: " + QByteArray::number(file.size()) + "\r\n\r\n" + file.readAll();
+        socket->write(response);
+        socket->flush();
+        socket->disconnectFromHost();
+    }
+
+    void sendErrorResponse(QTcpSocket *socket)
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: processRequest" << std::endl;
+        QByteArray response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
+        socket->write(response);
+        socket->flush();
+        socket->disconnectFromHost();
+    }
+
+    void upgradeToWebSocket(QTcpSocket *socket, const QByteArray &requestData)
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: processRequest" << std::endl;
+        socket->setParent(nullptr);
+        ws.handleConnection(socket); // Hand off to QWebSocketServer
+    }
+
+    void onOpen()
+    {
+        QWebSocket *c = ws.nextPendingConnection();
+        if(verbose)
+            std::cout << "WebSocketServer: opened connection " << c << std::endl;
+        connect(c, &QWebSocket::textMessageReceived, this, &WebSocketServer::onTextMessage);
+        connect(c, &QWebSocket::binaryMessageReceived, this, &WebSocketServer::onBinaryMessage);
+        connect(c, &QWebSocket::disconnected, this, &WebSocketServer::onClose);
+        clients << c;
+        if(openHandler)
+        {
+            openCallback_in in;
+            in.serverOrClientHandle = srvHandles.add(this, scriptID);
+            in.connectionHandle = connHandles.add(c, scriptID);
+            openCallback_out out;
+            openCallback(scriptID, openHandler->c_str(), &in, &out);
+        }
+    }
+
+    void onClose()
+    {
+        if(QWebSocket *c = qobject_cast<QWebSocket*>(sender())) {
+            if(verbose)
+                std::cout << "WebSocketServer: closed connection " << c << std::endl;
+            if(closeHandler)
+            {
+                closeCallback_in in;
+                in.serverOrClientHandle = srvHandles.add(this, scriptID);
+                in.connectionHandle = connHandles.add(c, scriptID);
+                closeCallback_out out;
+                closeCallback(scriptID, closeHandler->c_str(), &in, &out);
+            }
+            connHandles.remove(c);
+            clients.removeAll(c);
+            c->deleteLater();
+        }
+    }
+
+    void onFail(QWebSocketProtocol::CloseCode closeCode)
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: failure: " << closeCode << std::endl;
+        if(failHandler)
+        {
+            failCallback_in in;
+            in.serverOrClientHandle = srvHandles.add(this, scriptID);
+            //in.connectionHandle = connHandles.add(nullptr, scriptID);
+            failCallback_out out;
+            failCallback(scriptID, failHandler->c_str(), &in, &out);
+        }
+    }
+
+    void onTextMessage(const QString &message)
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: received text message: " << message << std::endl;
+        if(QWebSocket *c = qobject_cast<QWebSocket*>(sender())) {
+            if(messageHandler)
+            {
+                messageCallback_in in;
+                in.serverOrClientHandle = srvHandles.add(this, scriptID);
+                in.connectionHandle = connHandles.add(c, scriptID);
+                in.data = message.toStdString();
+                messageCallback_out out;
+                messageCallback(scriptID, messageHandler->c_str(), &in, &out);
+            }
+        }
+    }
+
+    void onBinaryMessage(const QByteArray &message)
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: received binary message: " << message << std::endl;
+        if(QWebSocket *c = qobject_cast<QWebSocket*>(sender())) {
+            if(messageHandler)
+            {
+                messageCallback_in in;
+                in.serverOrClientHandle = srvHandles.add(this, scriptID);
+                in.connectionHandle = connHandles.add(c, scriptID);
+                in.data = message.toStdString();
+                messageCallback_out out;
+                messageCallback(scriptID, messageHandler->c_str(), &in, &out);
+            }
+        }
+    }
+
+public:
+    int scriptID;
+    std::optional<std::string> openHandler;
+    std::optional<std::string> failHandler;
+    std::optional<std::string> closeHandler;
+    std::optional<std::string> messageHandler;
+    std::optional<std::string> httpHandler;
+
+private:
+    QTcpServer ts;
+    QWebSocketServer ws;
+    QList<QWebSocket*> clients;
+    sim::Handles<WebSocketServer*> &srvHandles;
+    sim::Handles<QWebSocket*> &connHandles;
+    bool verbose;
 };
 
-typedef websocketpp::config::asio_client my_cli_config;
-typedef websocketpp::client<my_cli_config> my_client;
-
-struct client_meta : public _meta
-{
-    my_client *cli{nullptr};
-    std::string uri;
-    virtual ~client_meta() {if(cli)delete cli;}
-};
+#include "plugin.moc"
 
 class Plugin : public sim::Plugin
 {
@@ -129,14 +351,14 @@ public:
     void onInit()
     {
         if(!registerScriptStuff())
-            throw runtime_error("failed to register script stuff");
+            throw std::runtime_error("failed to register script stuff");
 
         setExtVersion("WebSocket Plugin");
         setBuildDate(BUILD_DATE);
 
         if(!sim::getNamedStringParam("simWS.userAgent"))
         {
-            vector<int> v{0, 0, 0, sim::getInt32Param(sim_intparam_program_full_version)};
+            std::vector<int> v{0, 0, 0, sim::getInt32Param(sim_intparam_program_full_version)};
             for(int i = 3; i > 0; i--) v[i - 1] = v[i] / 100;
             for(int i = 0; i < 4; i++) v[i] = v[i] % 100;
             auto p = sim::getInt32Param(sim_intparam_platform);
@@ -158,279 +380,144 @@ public:
 
     void onInstancePass(const sim::InstancePassFlags &flags)
     {
-        for(auto srv_meta : srvHandles.all())
-            srv_meta->srv->poll();
-        for(auto cli_meta : cliHandles.all())
-            cli_meta->cli->poll();
     }
 
     void onScriptStateAboutToBeDestroyed(int scriptHandle, long long scriptUid)
     {
-        for(auto meta : srvHandles.find(scriptHandle))
-        {
-            meta->srv->stop_listening();
-            meta->srv->stop_perpetual();
-            srvHandles.remove(meta);
-            delete meta;
-        }
+        for(auto srv : srvHandles.find(scriptHandle))
+            srvHandles.remove(srv)->deleteLater();
 
-        for(auto meta : cliHandles.find(scriptHandle))
-        {
-            meta->cli->stop_perpetual();
-            cliHandles.remove(meta);
-            delete meta;
-        }
-    }
-
-    std::string getMetaHandle(_meta *meta)
-    {
-        if(auto *srv_meta = dynamic_cast<server_meta*>(meta))
-            return srvHandles.add(srv_meta, meta->scriptID);
-        if(auto *cli_meta = dynamic_cast<client_meta*>(meta))
-            return cliHandles.add(cli_meta, meta->scriptID);
-        else
-            throw runtime_error("invalid internal handle");
-    }
-
-    void onWSOpen(_meta *meta, websocketpp::connection_hdl hdl)
-    {
-        sim::addLog(sim_verbosity_debug, "onWSOpen");
-
-        if(!meta->openHandler) return;
-
-        openCallback_in in;
-        in.serverOrClientHandle = getMetaHandle(meta);
-        in.connectionHandle = connHandles.add(hdl, meta->scriptID);
-        openCallback_out out;
-        openCallback(meta->scriptID, meta->openHandler->c_str(), &in, &out);
-    }
-
-    void onWSFail(_meta *meta, websocketpp::connection_hdl hdl)
-    {
-        sim::addLog(sim_verbosity_debug, "onWSFail");
-
-        if(!meta->failHandler) return;
-
-        failCallback_in in;
-        in.serverOrClientHandle = getMetaHandle(meta);
-        in.connectionHandle = connHandles.add(hdl, meta->scriptID);
-        failCallback_out out;
-        failCallback(meta->scriptID, meta->failHandler->c_str(), &in, &out);
-    }
-
-    void onWSClose(_meta *meta, websocketpp::connection_hdl hdl)
-    {
-        sim::addLog(sim_verbosity_debug, "onWSClose");
-
-        if(!meta->closeHandler) return;
-
-        closeCallback_in in;
-        in.serverOrClientHandle = getMetaHandle(meta);
-        in.connectionHandle = connHandles.add(hdl, meta->scriptID);
-        closeCallback_out out;
-        closeCallback(meta->scriptID, meta->closeHandler->c_str(), &in, &out);
-    }
-
-    void onWSMessage(_meta *meta, websocketpp::connection_hdl hdl, my_server::message_ptr msg)
-    {
-        sim::addLog(sim_verbosity_debug, "onWSMessage: %s", msg->get_payload());
-
-        if(!meta->messageHandler) return;
-
-        messageCallback_in in;
-        in.serverOrClientHandle = getMetaHandle(meta);
-        in.connectionHandle = connHandles.add(hdl, meta->scriptID);
-        in.data = msg->get_payload();
-        messageCallback_out out;
-        messageCallback(meta->scriptID, meta->messageHandler->c_str(), &in, &out);
-    }
-
-    void onWSHTTP(server_meta *meta, websocketpp::connection_hdl hdl)
-    {
-        my_server::connection_ptr con = meta->srv->get_con_from_hdl(hdl);
-
-        sim::addLog(sim_verbosity_debug, "onWSHTTP: %s", con->get_resource());
-
-        if(!meta->httpHandler)
-        {
-            con->set_status(websocketpp::http::status_code::not_found);
-            return;
-        }
-
-        if(auto h = hdl.lock())
-        {
-            httpCallback_in in;
-            in.serverHandle = srvHandles.add(meta, meta->scriptID);
-            in.connectionHandle = connHandles.add(hdl, meta->scriptID);
-            in.resource = con->get_resource();
-            in.data = con->get_request_body();
-            httpCallback_out out;
-            if(httpCallback(meta->scriptID, meta->httpHandler->c_str(), &in, &out))
-            {
-                con->set_status(static_cast<websocketpp::http::status_code::value>(out.status));
-                con->set_body(out.data);
-            }
-            else
-            {
-                con->set_status(websocketpp::http::status_code::internal_server_error);
-            }
-        }
-        else
-        {
-            throw runtime_error("connection_hdl weak_ptr expired");
-        }
+        for(auto cli : cliHandles.find(scriptHandle))
+            cliHandles.remove(cli)->deleteLater();
     }
 
     void start(start_in *in, start_out *out)
     {
-        auto meta = new server_meta;
-        meta->srv = new my_server;
-        meta->srv->set_user_agent(*sim::getNamedStringParam("simWS.userAgent"));
-        auto verbose = sim::getNamedInt32Param("simWS.verbose");
-        if(verbose)
-            meta->verbose = *verbose;
-        if(meta->verbose > 0)
-            meta->srv->set_access_channels(websocketpp::log::alevel::all ^ websocketpp::log::alevel::frame_payload);
-        else
-            meta->srv->set_access_channels(websocketpp::log::alevel::none);
-        meta->srv->init_asio();
-        meta->srv->set_open_handler(bind(&Plugin::onWSOpen, this, meta, _1));
-        meta->srv->set_fail_handler(bind(&Plugin::onWSFail, this, meta, _1));
-        meta->srv->set_close_handler(bind(&Plugin::onWSClose, this, meta, _1));
-        meta->srv->set_message_handler(bind(&Plugin::onWSMessage, this, meta, _1, _2));
-        meta->srv->set_http_handler(bind(&Plugin::onWSHTTP, this, meta, _1));
-        meta->srv->listen(in->listenPort);
-        meta->srv->start_accept();
-        meta->scriptID = in->_.scriptID;
-        out->serverHandle = srvHandles.add(meta, in->_.scriptID);
+        bool verbose = sim::getNamedBoolParam("simWS.verbose").value_or(false);
+        auto *srv = new WebSocketServer(in->listenPort, srvHandles, connHandles, verbose);
+        srv->scriptID = in->_.scriptID;
+        out->serverHandle = srvHandles.add(srv, in->_.scriptID);
     }
 
-    _meta * getMeta(const std::string handle)
+    void stop(stop_in *in, stop_out *out)
     {
-        try {
-            return srvHandles.get(handle);
-        }
-        catch(...)
-        {
-            return cliHandles.get(handle);
-        }
+        auto *srv = srvHandles.get(in->serverHandle);
+        srvHandles.remove(srv);
+        delete srv;
     }
 
-    void setOpenHandler(setOpenHandler_in *in, setOpenHandler_out *out)
+    void connect(connect_in *in, connect_out *out)
     {
-        auto meta = getMeta(in->serverOrClientHandle);
-        meta->openHandler = in->callbackFn;
+        bool verbose = sim::getNamedBoolParam("simWS.verbose").value_or(false);
+        auto *cli = new WebSocketClient(QString::fromStdString(in->uri), cliHandles, connHandles, verbose);
+        cli->scriptID = in->_.scriptID;
+        out->clientHandle = cliHandles.add(cli, in->_.scriptID);
     }
 
-    void setFailHandler(setFailHandler_in *in, setFailHandler_out *out)
+    void disconnect(disconnect_in *in, disconnect_out *out)
     {
-        auto meta = getMeta(in->serverOrClientHandle);
-        meta->failHandler = in->callbackFn;
-    }
-
-    void setCloseHandler(setCloseHandler_in *in, setCloseHandler_out *out)
-    {
-        auto meta = getMeta(in->serverOrClientHandle);
-        meta->closeHandler = in->callbackFn;
-    }
-
-    void setMessageHandler(setMessageHandler_in *in, setMessageHandler_out *out)
-    {
-        auto meta = getMeta(in->serverOrClientHandle);
-        meta->messageHandler = in->callbackFn;
-    }
-
-    void setHTTPHandler(setHTTPHandler_in *in, setHTTPHandler_out *out)
-    {
-        auto meta = srvHandles.get(in->serverHandle);
-        meta->httpHandler = in->callbackFn;
+        auto *cli = cliHandles.get(in->clientHandle);
+        cliHandles.remove(cli);
+        delete cli;
     }
 
     void send(send_in *in, send_out *out)
     {
         if(in->opcode < 0 || in->opcode > 2)
             throw sim::exception("invalid opcode: %d", in->opcode);
-        auto meta = getMeta(in->serverOrClientHandle);
-        if(auto *srv_meta = dynamic_cast<server_meta*>(meta))
+        if(in->opcode != 1)
+            throw sim::exception("unsupported opcode: %d", in->opcode);
+        try
         {
-            auto hdl = connHandles.get(in->connectionHandle);
-            if(auto h = hdl.lock())
-            {
-                auto c = srv_meta->srv->get_con_from_hdl(hdl);
-                srv_meta->srv->send(c, in->data, static_cast<websocketpp::frame::opcode::value>(in->opcode));
-            }
-            else
-            {
-                throw runtime_error("connection_hdl weak_ptr expired");
-            }
+            auto *srv = srvHandles.get(in->serverOrClientHandle);
+            auto *conn = connHandles.get(in->connectionHandle);
+            conn->sendTextMessage(QString::fromStdString(in->data));
         }
-        else if(auto *cli_meta = dynamic_cast<client_meta*>(meta))
+        catch(...) {}
+        try
         {
-            auto hdl = connHandles.get(in->connectionHandle);
-            if(auto h = hdl.lock())
-            {
-                auto c = cli_meta->cli->get_con_from_hdl(hdl);
-                cli_meta->cli->send(c, in->data, static_cast<websocketpp::frame::opcode::value>(in->opcode));
-            }
-            else
-            {
-                throw runtime_error("connection_hdl weak_ptr expired");
-            }
+            auto *cli = cliHandles.get(in->serverOrClientHandle);
+            auto *conn = connHandles.get(in->connectionHandle);
+            conn->sendTextMessage(QString::fromStdString(in->data));
         }
+        catch(...) {}
     }
 
-    void stop(stop_in *in, stop_out *out)
+    void setOpenHandler(setOpenHandler_in *in, setOpenHandler_out *out)
     {
-        auto meta = srvHandles.get(in->serverHandle);
-        meta->srv->stop_listening();
-        meta->srv->stop_perpetual();
-        srvHandles.remove(meta);
-        delete meta;
-    }
-
-    void connect(connect_in *in, connect_out *out)
-    {
-        auto meta = new client_meta;
-        meta->uri = in->uri;
-        meta->cli = new my_client;
-        meta->cli->set_user_agent(*sim::getNamedStringParam("simWS.userAgent"));
-        auto verbose = sim::getNamedInt32Param("simWS.verbose");
-        if(verbose)
-            meta->verbose = *verbose;
-        if(meta->verbose > 0)
-            meta->cli->set_access_channels(websocketpp::log::alevel::all ^ websocketpp::log::alevel::frame_payload);
-        else
-            meta->cli->set_access_channels(websocketpp::log::alevel::none);
-        meta->cli->init_asio();
-        meta->cli->set_open_handler(bind(&Plugin::onWSOpen, this, meta, _1));
-        meta->cli->set_fail_handler(bind(&Plugin::onWSFail, this, meta, _1));
-        meta->cli->set_close_handler(bind(&Plugin::onWSClose, this, meta, _1));
-        meta->cli->set_message_handler(bind(&Plugin::onWSMessage, this, meta, _1, _2));
-        websocketpp::lib::error_code ec;
-        auto con = meta->cli->get_connection(meta->uri, ec);
-        if(ec)
+        try
         {
-            delete meta;
-            throw runtime_error("Could not create connection: " + ec.message());
+            auto *srv = srvHandles.get(in->serverOrClientHandle);
+            srv->openHandler = in->callbackFn;
         }
-        meta->cli->connect(con);
-        meta->cli->start_perpetual();
-        meta->scriptID = in->_.scriptID;
-        out->clientHandle = cliHandles.add(meta, in->_.scriptID);
+        catch(...) {}
+        try
+        {
+            auto *cli = cliHandles.get(in->serverOrClientHandle);
+            cli->openHandler = in->callbackFn;
+        }
+        catch(...) {}
     }
 
-    void disconnect(disconnect_in *in, disconnect_out *out)
+    void setFailHandler(setFailHandler_in *in, setFailHandler_out *out)
     {
-        auto meta = cliHandles.get(in->clientHandle);
-        meta->cli->stop_perpetual();
-        cliHandles.remove(meta);
-        delete meta;
+        try
+        {
+            auto *srv = srvHandles.get(in->serverOrClientHandle);
+            srv->failHandler = in->callbackFn;
+        }
+        catch(...) {}
+        try
+        {
+            auto *cli = cliHandles.get(in->serverOrClientHandle);
+            cli->failHandler = in->callbackFn;
+        }
+        catch(...) {}
+    }
+
+    void setCloseHandler(setCloseHandler_in *in, setCloseHandler_out *out)
+    {
+        try
+        {
+            auto *srv = srvHandles.get(in->serverOrClientHandle);
+            srv->closeHandler = in->callbackFn;
+        }
+        catch(...) {}
+        try
+        {
+            auto *cli = cliHandles.get(in->serverOrClientHandle);
+            cli->closeHandler = in->callbackFn;
+        }
+        catch(...) {}
+    }
+
+    void setMessageHandler(setMessageHandler_in *in, setMessageHandler_out *out)
+    {
+        try
+        {
+            auto *srv = srvHandles.get(in->serverOrClientHandle);
+            srv->messageHandler = in->callbackFn;
+        }
+        catch(...) {}
+        try
+        {
+            auto *cli = cliHandles.get(in->serverOrClientHandle);
+            cli->messageHandler = in->callbackFn;
+        }
+        catch(...) {}
+    }
+
+    void setHTTPHandler(setHTTPHandler_in *in, setHTTPHandler_out *out)
+    {
+        auto *srv = srvHandles.get(in->serverHandle);
+        srv->httpHandler = in->callbackFn;
     }
 
 private:
-    sim::Handles<server_meta*> srvHandles{"simWS.Server"};
-    sim::WeakHandles<websocketpp::connection_hdl> connHandles{"simWS.Connection"};
-    sim::Handles<client_meta*> cliHandles{"simWS.Client"};
+    sim::Handles<WebSocketServer*> srvHandles{"simWS.Server"};
+    sim::Handles<QWebSocket*> connHandles{"simWS.Connection"};
+    sim::Handles<WebSocketClient*> cliHandles{"simWS.Client"};
+    bool verbose;
 };
 
 SIM_PLUGIN(Plugin)
