@@ -18,6 +18,8 @@ NOTE: replace `coppeliasim-v4.5.0-rev0` with the actual CoppeliaSim version you 
 
 ### Usage
 
+[//]: # (plugin_doc_begin)
+
 Use `simWS.start` to start listening on the specified port, `simWS.setMessageHandler` to set an handler for incoming messages, and `simWS.send` to send messages on the specified connection:
 
 ```lua
@@ -62,5 +64,7 @@ end
 ```
 
 Clients use the `simWS.connect()` function to connect and `simWS.send()` to send data similarly to the servers.
+
+[//]: # (plugin_doc_begin)
 
 See also the examples in the [`examples`](examples) subdirectory.
