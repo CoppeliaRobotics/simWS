@@ -4,12 +4,11 @@ project(simWS)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MACOSX_RPATH 1)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_AUTOMOC ON)
 
 if(WIN32)
     add_definitions(-DWIN32_LEAN_AND_MEAN=1)
 endif()
-
-set(USE_STANDALONE_ASIO ON CACHE BOOL "Use standalone 'asio' library instead of 'boost-asio'")
 
 if(NOT COPPELIASIM_INCLUDE_DIR)
     if(DEFINED ENV{COPPELIASIM_ROOT_DIR})
@@ -20,25 +19,14 @@ if(NOT COPPELIASIM_INCLUDE_DIR)
 endif()
 list(APPEND CMAKE_MODULE_PATH ${COPPELIASIM_INCLUDE_DIR}/cmake)
 find_package(CoppeliaSim 4.5.1.7 REQUIRED)
-find_package(OpenSSL REQUIRED)
 
-include(FetchContent)
-
-FetchContent_Declare(websocketpp
-    URL https://github.com/zaphoyd/websocketpp/archive/refs/tags/0.8.2.tar.gz
-)
-FetchContent_GetProperties(websocketpp)
-if(NOT websocketpp_POPULATED)
-    FetchContent_Populate(websocketpp)
-endif()
+set(Qt Qt5 CACHE STRING "Qt version to use (e.g. Qt5)")
+set_property(CACHE Qt PROPERTY STRINGS Qt5 Qt6)  #
+find_package(${Qt} COMPONENTS Core WebSockets REQUIRED)
 
 coppeliasim_generate_stubs(${CMAKE_CURRENT_BINARY_DIR}/generated XML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/sourceCode/callbacks.xml LUA_FILE ${CMAKE_CURRENT_SOURCE_DIR}/lua/simWS.lua)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/sourceCode/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 coppeliasim_add_plugin(simWS SOURCES sourceCode/plugin.cpp)
-target_link_libraries(simWS PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-if(USE_STANDALONE_ASIO)
-    target_compile_definitions(simWS PRIVATE -DASIO_STANDALONE)
-endif()
-target_include_directories(simWS PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/_deps/websocketpp-src)
+target_link_libraries(simWS PRIVATE Qt::Core Qt::WebSockets)
