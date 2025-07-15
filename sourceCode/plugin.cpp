@@ -45,6 +45,7 @@ public slots:
     {
         if(verbose)
             std::cout << "WebSocketClient: opened connection" << std::endl;
+
         connect(&ws, &QWebSocket::textMessageReceived, this, &WebSocketClient::onTextMessage);
         connect(&ws, &QWebSocket::binaryMessageReceived, this, &WebSocketClient::onBinaryMessage);
         if(openHandler)
@@ -61,6 +62,7 @@ public slots:
     {
         if(verbose)
             std::cout << "WebSocketClient: closed connection" << std::endl;
+
         if(closeHandler)
         {
             closeCallback_in in;
@@ -76,6 +78,7 @@ public slots:
     {
         if(verbose)
             std::cout << "WebSocketClient: failure: " << error << std::endl;
+
         if(failHandler)
         {
             failCallback_in in;
@@ -90,6 +93,7 @@ public slots:
     {
         if(verbose)
             std::cout << "WebSocketClient: received text message: " << message << std::endl;
+
         if(messageHandler)
         {
             messageCallback_in in;
@@ -97,9 +101,12 @@ public slots:
             in.connectionHandle = connHandles.add(&ws, scriptID);
             in.data = message.toStdString();
             messageCallback_out out;
+
             if(verbose)
                 std::cout << "WebSocketClient::onTextMessage() - before callback" << std::endl;
+
             messageCallback(scriptID, messageHandler->c_str(), &in, &out);
+
             if(verbose)
                 std::cout << "WebSocketClient::onTextMessage() - after callback" << std::endl;
         }
@@ -109,6 +116,7 @@ public slots:
     {
         if(verbose)
             std::cout << "WebSocketClient: received binary message: " << message << std::endl;
+
         if(messageHandler)
         {
             messageCallback_in in;
@@ -138,70 +146,131 @@ class WebSocketServer : public QObject
 {
     Q_OBJECT
 public:
-    explicit WebSocketServer(quint16 port, sim::Handles<WebSocketServer*> &srvHandles, sim::Handles<QWebSocket*> &connHandles, bool verbose, QObject *parent = nullptr)
+    explicit WebSocketServer(quint16 port, quint16 portHTTP,sim::Handles<WebSocketServer*> &srvHandles, sim::Handles<QWebSocket*> &connHandles, bool verbose, QObject *parent = nullptr)
         : QObject(parent),
           ts(parent),
           ws(QString::fromStdString(*sim::getNamedStringParam("simWS.userAgent")), QWebSocketServer::NonSecureMode, this),
           srvHandles(srvHandles),
           connHandles(connHandles)
     {
-#if 0
         if(ws.listen(QHostAddress::Any, port))
         {
+            if(verbose)
+                std::cout << "WebSocketServer: websocket listening on " << int(port) << std::endl;
+
             connect(&ws, &QWebSocketServer::newConnection, this, &WebSocketServer::onOpen);
             connect(&ws, &QWebSocketServer::closed, this, &WebSocketServer::onClose);
-            connect(&ws, &QWebSocketServer::serverError, this, &WebSocketClient::onFail);
+            connect(&ws, &QWebSocketServer::serverError, this, &WebSocketServer::onFail);
         }
-#else
-        if(ts.listen(QHostAddress::Any, port))
+        else
         {
-            connect(&ts, &QTcpServer::newConnection, this, &WebSocketServer::handleNewConnection);
+            sim::addLog(sim_verbosity_errors, "failed listening on port %d", int(port));
         }
-#endif
+
+        if(!portHTTP) return;
+        if(ts.listen(QHostAddress::Any, portHTTP))
+        {
+            if(verbose)
+                std::cout << "WebSocketServer: HTTP server listening on " << int(portHTTP) << std::endl;
+
+            connect(&ts, &QTcpServer::newConnection, this, &WebSocketServer::handleHTTPConnection);
+        }
+        else
+        {
+            sim::addLog(sim_verbosity_errors, "failed listening on port %d (HTTP server)", int(portHTTP));
+        }
     }
 
-    void handleNewConnection()
+    ~WebSocketServer()
     {
         if(verbose)
-            std::cout << "WebSocketServer: handleNewConnection" << std::endl;
+            std::cout << "WebSocketServer: dtor" << std::endl;
+    }
+
+    void handleHTTPConnection()
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: handleHTTPConnection" << std::endl;
+
         QTcpSocket *socket = ts.nextPendingConnection();
-        connect(socket, &QTcpSocket::readyRead, this, [this, socket]() { processRequest(socket); });
+        connect(socket, &QTcpSocket::readyRead, this, [this, socket]() { handleHTTPReadyRead(socket); });
+    }
+
+    void handleHTTPReadyRead(QTcpSocket *socket)
+    {
+        if(verbose)
+            std::cout << "WebSocketServer: handleHTTPReadyRead" << std::endl;
+
+        while(socket->canReadLine())
+        {
+            QString line = QString::fromUtf8(socket->readLine()).trimmed();
+            if(verbose)
+                std::cout << "WebSocketServer: handleHTTPReadyRead: line: " << line.toStdString() << std::endl;
+
+            if(currentRequest.method.isEmpty())
+            {
+                // read method + resource...
+                const QStringList parts = line.split(' ', Qt::SkipEmptyParts);
+                if(parts.size() >= 1)
+                {
+                    currentRequest.method = parts[0];
+                    if(parts.size() >= 2 && currentRequest.method == "GET")
+                    {
+                        currentRequest.resource = parts[1];
+                    }
+                    else
+                    {
+                        currentRequest.error = true;
+                    }
+                }
+                else
+                {
+                    currentRequest.error = true;
+                }
+            }
+            else
+            {
+                // read headers...
+                if(line.isEmpty())
+                {
+                    // end of headers
+                    processRequest(socket);
+                    currentRequest.clear();
+                    return;
+                }
+
+                int colonIndex = line.indexOf(':');
+                if(colonIndex > 0)
+                {
+                    QString key = line.left(colonIndex).trimmed().toLower();
+                    QString value = line.mid(colonIndex + 1).trimmed();
+                    currentRequest.headers[key] = value;
+                }
+            }
+        }
     }
 
     void processRequest(QTcpSocket *socket)
     {
         if(verbose)
             std::cout << "WebSocketServer: processRequest" << std::endl;
-        if(!socket->canReadLine()) return;
 
-        QByteArray requestData = socket->readAll();
-        QString requestLine = QString::fromUtf8(requestData.split('\n').first());
-
-        if(requestLine.startsWith("GET /"))
+        if(!currentRequest.error && httpHandler)
         {
-            QString resource = requestLine.mid(4);
-            if(httpHandler)
+            httpCallback_in in;
+            in.serverHandle = srvHandles.add(this, scriptID);
+            //in.connectionHandle = connHandles.add(nullptr, scriptID);
+            in.resource = currentRequest.resource.toStdString();
+            in.data = "";
+            httpCallback_out out;
+            int httpStatus = 500;
+            QByteArray responseBody;
+            if(httpCallback(scriptID, httpHandler->c_str(), &in, &out))
             {
-                httpCallback_in in;
-                in.serverHandle = srvHandles.add(this, scriptID);
-                //in.connectionHandle = connHandles.add(nullptr, scriptID);
-                in.resource = resource.toStdString();
-                in.data = "";
-                httpCallback_out out;
-                int httpStatus = 500;
-                QByteArray responseBody;
-                if(httpCallback(scriptID, httpHandler->c_str(), &in, &out))
-                {
-                    httpStatus = out.status;
-                    responseBody = QByteArray::fromStdString(out.data);
-                }
-                sendResponse(socket, httpStatus, responseBody);
+                httpStatus = out.status;
+                responseBody = QByteArray::fromStdString(out.data);
             }
-            else sendErrorResponse(socket);
-        }
-        else if(requestData.contains("Upgrade: websocket"))
-        {
-            upgradeToWebSocket(socket, requestData);
+            sendResponse(socket, httpStatus, responseBody);
         }
         else
         {
@@ -212,11 +281,14 @@ public:
     void sendResponse(QTcpSocket *socket, int status, const QByteArray &content = "")
     {
         if(verbose)
-            std::cout << "WebSocketServer: processRequest" << std::endl;
+            std::cout << "WebSocketServer: sendResponse" << std::endl;
+
         QByteArray response = "HTTP/1.1 " + QByteArray::number(status) + "\r\n"
-                              "Connection: close\r\n" + content;
+                              "Connection: close\r\n"
                               //"Content-Type: text/html\r\n"
-                              //"Content-Length: " + QByteArray::number(file.size()) + "\r\n\r\n" + file.readAll();
+                              //"Content-Length: " + QByteArray::number(content.size()) + "\r\n\r\n" + content
+                              "\r\n"
+                              + content;
         socket->write(response);
         socket->flush();
         socket->disconnectFromHost();
@@ -225,26 +297,22 @@ public:
     void sendErrorResponse(QTcpSocket *socket)
     {
         if(verbose)
-            std::cout << "WebSocketServer: processRequest" << std::endl;
-        QByteArray response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
+            std::cout << "WebSocketServer: sendErrorResponse" << std::endl;
+
+        QByteArray response = "HTTP/1.1 404 Not Found\r\n"
+                              "Connection: close\r\n\r\n";
         socket->write(response);
         socket->flush();
         socket->disconnectFromHost();
     }
 
-    void upgradeToWebSocket(QTcpSocket *socket, const QByteArray &requestData)
-    {
-        if(verbose)
-            std::cout << "WebSocketServer: processRequest" << std::endl;
-        socket->setParent(nullptr);
-        ws.handleConnection(socket); // Hand off to QWebSocketServer
-    }
-
     void onOpen()
     {
         QWebSocket *c = ws.nextPendingConnection();
+
         if(verbose)
             std::cout << "WebSocketServer: opened connection " << c << std::endl;
+
         connect(c, &QWebSocket::textMessageReceived, this, &WebSocketServer::onTextMessage);
         connect(c, &QWebSocket::binaryMessageReceived, this, &WebSocketServer::onBinaryMessage);
         connect(c, &QWebSocket::disconnected, this, &WebSocketServer::onClose);
@@ -264,6 +332,7 @@ public:
         if(QWebSocket *c = qobject_cast<QWebSocket*>(sender())) {
             if(verbose)
                 std::cout << "WebSocketServer: closed connection " << c << std::endl;
+
             if(closeHandler)
             {
                 closeCallback_in in;
@@ -282,6 +351,7 @@ public:
     {
         if(verbose)
             std::cout << "WebSocketServer: failure: " << closeCode << std::endl;
+
         if(failHandler)
         {
             failCallback_in in;
@@ -296,6 +366,7 @@ public:
     {
         if(verbose)
             std::cout << "WebSocketServer: received text message: " << message << std::endl;
+
         if(QWebSocket *c = qobject_cast<QWebSocket*>(sender())) {
             if(messageHandler)
             {
@@ -313,6 +384,7 @@ public:
     {
         if(verbose)
             std::cout << "WebSocketServer: received binary message: " << message << std::endl;
+
         if(QWebSocket *c = qobject_cast<QWebSocket*>(sender())) {
             if(messageHandler)
             {
@@ -336,6 +408,13 @@ public:
 
 private:
     QTcpServer ts;
+    struct {
+        QString resource;
+        QString method;
+        QMap<QString, QString> headers;
+        bool error {false};
+        void clear() { resource = ""; method = ""; headers.clear(); error = false; }
+    } currentRequest;
     QWebSocketServer ws;
     QList<QWebSocket*> clients;
     sim::Handles<WebSocketServer*> &srvHandles;
@@ -394,7 +473,7 @@ public:
     void start(start_in *in, start_out *out)
     {
         bool verbose = sim::getNamedBoolParam("simWS.verbose").value_or(false);
-        auto *srv = new WebSocketServer(in->listenPort, srvHandles, connHandles, verbose);
+        auto *srv = new WebSocketServer(in->listenPort, in->listenPortHTTP, srvHandles, connHandles, verbose);
         srv->scriptID = in->_.scriptID;
         out->serverHandle = srvHandles.add(srv, in->_.scriptID);
     }
@@ -423,15 +502,16 @@ public:
 
     void send(send_in *in, send_out *out)
     {
-        if(in->opcode < 0 || in->opcode > 2)
+        if(in->opcode != simws_opcode_text && in->opcode != simws_opcode_binary)
             throw sim::exception("invalid opcode: %d", in->opcode);
-        if(in->opcode != 1)
-            throw sim::exception("unsupported opcode: %d", in->opcode);
         try
         {
             auto *srv = srvHandles.get(in->serverOrClientHandle);
             auto *conn = connHandles.get(in->connectionHandle);
-            conn->sendTextMessage(QString::fromStdString(in->data));
+            if(in->opcode == simws_opcode_text)
+                conn->sendTextMessage(QString::fromStdString(in->data));
+            if(in->opcode != simws_opcode_binary)
+                conn->sendBinaryMessage(QByteArray::fromStdString(in->data));
         }
         catch(...) {}
         try

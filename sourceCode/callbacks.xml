@@ -8,7 +8,12 @@
             Set up endpoint for listening on a port, and starts the server's async connection acceptance loop.
         </description>
         <params>
-            <param name="listenPort" type="int" />
+            <param name="listenPort" type="int">
+                <description>Listen port for the WebSocket server</description>
+            </param>
+            <param name="listenPortHTTP" type="int" default="0">
+                <description>Listen port for the HTTP server (if 0, won't listen for HTTP connections)</description>
+            </param>
         </params>
         <return>
             <param name="serverHandle" type="string" />
