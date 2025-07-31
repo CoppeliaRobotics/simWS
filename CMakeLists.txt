@@ -30,24 +30,29 @@ if(NOT websocketpp_POPULATED)
     FetchContent_Populate(websocketpp)
 endif()
 
-include(ExternalProject)
-
-set(ASIO_INSTALL_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/asiolibs)
-ExternalProject_Add(asio
+FetchContent_Declare(asio
     URL https://sourceforge.net/projects/asio/files/asio/1.24.0%20%28Stable%29/asio-1.24.0.tar.gz/download
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_BINARY_DIR}/asio-prefix/src/asio/configure
-        --prefix=${ASIO_INSTALL_PREFIX}
-    BUILD_COMMAND make
-    INSTALL_COMMAND make install
 )
+FetchContent_GetProperties(asio)
+if(NOT asio_POPULATED)
+    FetchContent_Populate(asio)
+    add_library(asio INTERFACE)
+    if(EXISTS "${asio_SOURCE_DIR}/include")
+        target_include_directories(asio INTERFACE ${asio_SOURCE_DIR}/include)
+    elseif(EXISTS "${asio_SOURCE_DIR}/asio")
+        target_include_directories(asio INTERFACE ${asio_SOURCE_DIR})
+    else()
+        message(FATAL_ERROR "Could not locate Asio headers in ${asio_SOURCE_DIR}")
+    endif()
+    target_compile_definitions(asio INTERFACE ASIO_STANDALONE)
+    add_library(Asio::asio ALIAS asio)
+endif()
 
 coppeliasim_generate_stubs(${CMAKE_CURRENT_BINARY_DIR}/generated XML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/sourceCode/callbacks.xml LUA_FILE ${CMAKE_CURRENT_SOURCE_DIR}/lua/simWS.lua)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/sourceCode/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 coppeliasim_add_plugin(simWS SOURCES sourceCode/plugin.cpp)
-add_dependencies(simWS asio)
-target_link_libraries(simWS PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(simWS PRIVATE OpenSSL::SSL OpenSSL::Crypto Asio::asio)
 target_compile_definitions(simWS PRIVATE -DASIO_STANDALONE)
 target_include_directories(simWS PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/_deps/websocketpp-src)
-target_include_directories(simWS PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/asiolibs/include/)
