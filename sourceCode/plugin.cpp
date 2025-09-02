@@ -1,4 +1,5 @@
 #include <string>
+#include <map>
 #include <stdexcept>
 #include <functional>
 #include <optional>
@@ -245,6 +246,33 @@ public:
         messageCallback(meta->scriptID, meta->messageHandler->c_str(), &in, &out);
     }
 
+    std::string getMimeType(std::string path)
+    {
+        // Strip query
+        auto qpos = path.find('?');
+        if(qpos != std::string::npos)
+            path = path.substr(0, qpos);
+
+        std::transform(path.begin(), path.end(), path.begin(), [](unsigned char c) { return std::tolower(c); });
+
+        int matchLen = 0;
+        std::string mimeType = "application/octet-stream";
+        if(path.empty() || path.back() == '/')
+            mimeType = "text/html; charset=UTF-8";
+        else for(const auto &kv : mimeTypeMap)
+        {
+            const std::string &ext = kv.first;
+            if(ext.size() <= matchLen) continue; // match longest ext
+            if(path.size() < ext.size()) continue;
+            if(path.compare(path.size() - ext.size(), ext.size(), ext) == 0)
+            {
+                matchLen = ext.size();
+                mimeType = kv.second;
+            }
+        }
+        return mimeType;
+    }
+
     void onWSHTTP(server_meta *meta, websocketpp::connection_hdl hdl)
     {
         my_server::connection_ptr con = meta->srv->get_con_from_hdl(hdl);
@@ -268,6 +296,8 @@ public:
             if(httpCallback(meta->scriptID, meta->httpHandler->c_str(), &in, &out))
             {
                 con->set_status(static_cast<websocketpp::http::status_code::value>(out.status));
+                if(con->get_response_header("Content-Type").empty())
+                    con->replace_header("Content-Type", getMimeType(con->get_resource()));
                 con->set_body(out.data);
             }
             else
@@ -431,6 +461,22 @@ private:
     sim::Handles<server_meta*> srvHandles{"simWS.Server"};
     sim::WeakHandles<websocketpp::connection_hdl> connHandles{"simWS.Connection"};
     sim::Handles<client_meta*> cliHandles{"simWS.Client"};
+    std::map<std::string, std::string> mimeTypeMap = {
+        {".html", "text/html; charset=UTF-8"},
+        {".htm", "text/html; charset=UTF-8"},
+        {".js", "application/javascript; charset=UTF-8"},
+        {".js.map", "application/json; charset=UTF-8"},
+        {".css", "text/css; charset=UTF-8"},
+        {".json", "application/json; charset=UTF-8"},
+        {".png", "image/png"},
+        {".jpg", "image/jpeg"},
+        {".jpeg", "image/jpeg"},
+        {".gif", "image/gif"},
+        {".svg", "image/svg+xml; charset=UTF-8"},
+        {".ico", "image/x-icon"},
+        {".txt", "text/plain; charset=UTF-8"},
+        {".wasm", "application/wasm"}
+    };
 };
 
 SIM_PLUGIN(Plugin)
