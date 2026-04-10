@@ -3,8 +3,8 @@
 #include <stdexcept>
 #include <functional>
 #include <optional>
-#include <simPlusPlus/Plugin.h>
-#include <simPlusPlus/Handles.h>
+#include <simPlusPlus-2/Plugin.h>
+#include <simPlusPlus-2/Handles.h>
 #include "config.h"
 #include "plugin.h"
 #include "stubs.h"
@@ -135,13 +135,13 @@ public:
         setExtVersion("WebSocket Plugin");
         setBuildDate(BUILD_DATE);
 
-        if(!sim::getNamedStringParam("simWS.userAgent"))
+        if(!sim::getStringProperty(sim_handle_app, "namedParam.simWS.userAgent", {}))
         {
-            vector<int> v{0, 0, 0, sim::getInt32Param(sim_intparam_program_full_version)};
+            vector<int> v{0, 0, 0, sim::getIntProperty(sim_handle_app, "productVersionNb")};
             for(int i = 3; i > 0; i--) v[i - 1] = v[i] / 100;
             for(int i = 0; i < 4; i++) v[i] = v[i] % 100;
-            auto p = sim::getInt32Param(sim_intparam_platform);
-            sim::setNamedStringParam("simWS.userAgent",
+            auto p = sim::getIntProperty(sim_handle_app, "platform");
+            sim::setStringProperty(sim_handle_app, "namedParam.simWS.userAgent",
                 sim::util::sprintf("CoppeliaSim/%d.%d.%drev%d %s",
                     v[0], v[1], v[2], v[3],
                     p == 0 ? "Windows" :
@@ -315,10 +315,8 @@ public:
     {
         auto meta = new server_meta;
         meta->srv = new my_server;
-        meta->srv->set_user_agent(*sim::getNamedStringParam("simWS.userAgent"));
-        auto verbose = sim::getNamedInt32Param("simWS.verbose");
-        if(verbose)
-            meta->verbose = *verbose;
+        meta->srv->set_user_agent(sim::getStringProperty(sim_handle_app, "namedParam.simWS.userAgent"));
+        meta->verbose = std::stoi(*sim::getStringProperty(sim_handle_app, "namedParam.simWS.verbose", "0"));
         if(meta->verbose > 0)
             meta->srv->set_access_channels(websocketpp::log::alevel::all ^ websocketpp::log::alevel::frame_payload);
         else
@@ -423,10 +421,8 @@ public:
         auto meta = new client_meta;
         meta->uri = in->uri;
         meta->cli = new my_client;
-        meta->cli->set_user_agent(*sim::getNamedStringParam("simWS.userAgent"));
-        auto verbose = sim::getNamedInt32Param("simWS.verbose");
-        if(verbose)
-            meta->verbose = *verbose;
+        meta->cli->set_user_agent(sim::getStringProperty(sim_handle_app, "namedParam.simWS.userAgent"));
+        meta->verbose = std::stoi(*sim::getStringProperty(sim_handle_app, "namedParam.simWS.verbose", "0"));
         if(meta->verbose > 0)
             meta->cli->set_access_channels(websocketpp::log::alevel::all ^ websocketpp::log::alevel::frame_payload);
         else
