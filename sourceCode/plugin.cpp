@@ -132,9 +132,6 @@ public:
         if(!registerScriptStuff())
             throw runtime_error("failed to register script stuff");
 
-        setExtVersion("WebSocket Plugin");
-        setBuildDate(BUILD_DATE);
-
         if(!sim::getStringProperty(sim_handle_app, "namedParam.simWS.userAgent", {}))
         {
             vector<int> v{0, 0, 0, sim::getIntProperty(sim_handle_app, "productVersionNb")};
